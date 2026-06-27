@@ -3,3 +3,7 @@ uvicorn
 python-dotenv
 google-generativeai
 pydantic
+scikit-learn
+pandas
+numpy
+lightgbm

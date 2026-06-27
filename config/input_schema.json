@@ -1,0 +1,23 @@
+{
+  "required_user_inputs": {
+    "age": "나이",
+    "sex": "성별 코드",
+    "height_cm": "키 cm",
+    "weight_kg": "몸무게 kg",
+    "waist_cm": "허리둘레 cm",
+    "systolic_bp": "수축기혈압",
+    "diastolic_bp": "이완기혈압",
+    "fasting_glucose": "공복혈당",
+    "hba1c": "당화혈색소",
+    "total_cholesterol": "총콜레스테롤",
+    "hdl_cholesterol": "HDL 콜레스테롤",
+    "triglyceride": "중성지방",
+    "ldl_direct": "LDL 콜레스테롤",
+    "current_smoking": "현재 흡연 여부",
+    "aerobic_activity": "유산소 신체활동 실천 여부"
+  },
+  "auto_calculated": {
+    "bmi": "height_cm, weight_kg로 계산 가능"
+  },
+  "bmi_formula": "weight_kg / ((height_cm / 100) ** 2)"
+}

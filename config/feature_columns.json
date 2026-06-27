@@ -1,0 +1,55 @@
+{
+  "all_input_columns": [
+    "age",
+    "sex",
+    "height_cm",
+    "weight_kg",
+    "waist_cm",
+    "bmi",
+    "systolic_bp",
+    "diastolic_bp",
+    "fasting_glucose",
+    "hba1c",
+    "total_cholesterol",
+    "hdl_cholesterol",
+    "triglyceride",
+    "ldl_direct",
+    "current_smoking",
+    "aerobic_activity"
+  ],
+  "feature_columns_by_disease": {
+    "고혈압": [
+      "age",
+      "sex",
+      "height_cm",
+      "weight_kg",
+      "waist_cm",
+      "bmi",
+      "fasting_glucose",
+      "hba1c",
+      "total_cholesterol",
+      "hdl_cholesterol",
+      "triglyceride",
+      "ldl_direct",
+      "current_smoking",
+      "aerobic_activity"
+    ],
+    "당뇨": [
+      "age",
+      "sex",
+      "height_cm",
+      "weight_kg",
+      "waist_cm",
+      "bmi",
+      "systolic_bp",
+      "diastolic_bp",
+      "total_cholesterol",
+      "hdl_cholesterol",
+      "triglyceride",
+      "ldl_direct",
+      "current_smoking",
+      "aerobic_activity"
+    ]
+  },
+  "note": "Each disease model uses different feature columns because leakage variables were removed."
+}
