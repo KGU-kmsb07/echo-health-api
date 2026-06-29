@@ -6,36 +6,67 @@ import json
 # Initialize the Gemini Client. It will load GEMINI_API_KEY from environment variables automatically.
 client = genai.Client()
 
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+def _load_plan_prompt(age, diabetes, hypertension, metabolic, obesity, matched_kdca) -> str:
+    path = os.path.join(BASE_DIR, "config/plan_prompt.txt")
+    with open(path, "r", encoding="utf-8") as f:
+        content = f.read()
+    return content.replace("{age}", str(age))\
+                  .replace("{diabetes}", str(diabetes))\
+                  .replace("{hypertension}", str(hypertension))\
+                  .replace("{metabolic}", str(metabolic))\
+                  .replace("{obesity}", str(obesity))\
+                  .replace("{matched_kdca}", matched_kdca)
+
+def _load_coach_prompt(user_context) -> str:
+    path = os.path.join(BASE_DIR, "config/coach_prompt.txt")
+    with open(path, "r", encoding="utf-8") as f:
+        content = f.read()
+    return content.replace("{user_context}", user_context)
+
+def _load_kdca_contents() -> dict:
+    path = os.path.join(BASE_DIR, "config/kdca_contents.json")
+    with open(path, "r", encoding="utf-8") as f:
+        return json.load(f)
+
 def generate_plan(diabetes: float, hypertension: float,
-                  metabolic: float, obesity: float, age: int) -> dict:
+                  metabolic: float, obesity: float, age: int,
+                  current_smoking: int = 0, aerobic_activity: int = 1) -> dict:
     try:
-        prompt = f"""
-다음 건강 분석 결과를 가진 {age}세 사용자의 4주 실천 플랜과 주간 목표를 JSON으로만 반환해줘.
-설명 텍스트, 마크다운 없이 JSON만.
+        kdca_content_map = _load_kdca_contents()
 
-분석 결과:
-- 당뇨 위험도: {diabetes}%
-- 고혈압 위험도: {hypertension}%
-- 대사증후군 위험도: {metabolic}%
-- 비만 위험도: {obesity}%
+        h_pct = hypertension * 100 if hypertension <= 1.0 else hypertension
+        d_pct = diabetes * 100 if diabetes <= 1.0 else diabetes
+        o_pct = obesity * 100 if obesity <= 1.0 else obesity
 
-형식:
-{{
-  "plan": [
-    {{
-      "week": 1,
-      "title": "주차 제목",
-      "color": "#2563EB",
-      "items": ["실천 항목1", "실천 항목2", "실천 항목3", "실천 항목4"]
-    }}
-  ],
-  "weeklyGoals": {{
-    "steps": 목표 걸음수 숫자,
-    "exerciseMinutes": 하루 목표 운동시간 숫자
-  }}
-}}
-4주차까지 작성. JSON만 반환.
-"""
+        selected_contents = []
+        if h_pct >= 35.0:
+            selected_contents.append(kdca_content_map["hypertension"])
+        if d_pct >= 35.0:
+            selected_contents.append(kdca_content_map["diabetes"])
+        if o_pct >= 35.0:
+            selected_contents.append(kdca_content_map["obesity"])
+        if current_smoking == 1:
+            selected_contents.append(kdca_content_map["smoking"])
+        if aerobic_activity == 0:
+            selected_contents.append(kdca_content_map["activity"])
+
+        if not selected_contents:
+            selected_contents.append(kdca_content_map["activity"])
+
+        matched_kdca = "\n".join(selected_contents)
+        print(f"[KDCA Grounding LOG] Matched health contents:\n{matched_kdca}")
+
+        prompt = _load_plan_prompt(
+            age=age,
+            diabetes=diabetes,
+            hypertension=hypertension,
+            metabolic=metabolic,
+            obesity=obesity,
+            matched_kdca=matched_kdca
+        )
+
         response = client.models.generate_content(
             model='gemini-2.5-flash',
             contents=prompt,
@@ -64,13 +95,7 @@ def generate_plan(diabetes: float, hypertension: float,
 
 def generate_coach_reply(messages: list, user_context: str) -> dict:
     try:
-        system_prompt = f"""너는 공공 건강 데이터 기반 AI 건강 코치야.
-KNHANES 2022-2024, 질병관리청 데이터를 근거로 답변해.
-의료 진단은 절대 하지 마.
-답변은 친절하고 간결하게 3-4문장으로.
-답변 마지막에 반드시 '출처: 질병관리청 국민건강영양조사' 형식으로 표기해.
-
-사용자 건강 정보: {user_context}"""
+        system_prompt = _load_coach_prompt(user_context=user_context)
 
         history = []
         for msg in messages[:-1]:

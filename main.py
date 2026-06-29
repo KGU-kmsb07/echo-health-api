@@ -1,8 +1,11 @@
+import os
 from dotenv import load_dotenv
-load_dotenv()
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+load_dotenv(os.path.join(BASE_DIR, ".env"))
 
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 from routers import analyze, plan, benefits, coach
 import os
@@ -27,6 +30,10 @@ app.include_router(analyze.router)
 app.include_router(plan.router)
 app.include_router(benefits.router)
 app.include_router(coach.router)
+
+@app.get("/")
+def read_root():
+    return RedirectResponse(url="/docs")
 
 @app.get("/health")
 def health():

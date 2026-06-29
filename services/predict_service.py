@@ -24,8 +24,29 @@ def _load_models():
         with open(os.path.join(BASE_DIR, "config/feature_columns.json"), "r", encoding="utf-8") as f:
             _feature_columns = json.load(f)
 
-def _calc_bmi(weight_kg: float, height_cm: float) -> float:
-    return round(weight_kg / (height_cm / 100) ** 2, 1)
+def calculate_bmi(height_cm: float, weight_kg: float) -> float:
+    height_m = height_cm / 100
+    return round(weight_kg / (height_m ** 2), 2)
+
+def calculate_vitality_score(hypertension_prob: float, diabetes_prob: float, bmi: float,
+                              current_smoking: int, aerobic_activity: int) -> int:
+    # 소수 → 퍼센트 변환
+    if hypertension_prob <= 1.0:
+        hypertension_prob *= 100
+    if diabetes_prob <= 1.0:
+        diabetes_prob *= 100
+
+    score = 100.0
+    score -= hypertension_prob * 0.2
+    score -= diabetes_prob * 0.2
+    if bmi >= 25:
+        score -= 15
+    if current_smoking == 1:
+        score -= 15
+    if aerobic_activity == 0:
+        score -= 15
+
+    return max(0, min(100, round(score)))
 
 def _calc_obesity(bmi: float) -> int:
     if bmi >= 30: return 75
@@ -45,11 +66,61 @@ def _calc_metabolic(data: dict) -> int:
     if score == 1: return 20
     return 10
 
+def calculate_health_age(age: int, hypertension_prob: float, diabetes_prob: float, 
+                         bmi: float, current_smoking: int, aerobic_activity: int) -> int:
+    health_age = float(age)
+    
+    # 1. 고혈압 위험도 영향성 (혈관 건강 나이 가중치)
+    if hypertension_prob < 0.2:
+        health_age -= 1.0
+    elif hypertension_prob >= 0.6:
+        health_age += 4.0
+    elif hypertension_prob >= 0.35:
+        health_age += 2.0
+        
+    # 2. 당뇨 위험도 영향성 (세포/대사 기능 나이 가중치)
+    if diabetes_prob < 0.1:
+        health_age -= 1.0
+    elif diabetes_prob >= 0.6:
+        health_age += 4.0
+    elif diabetes_prob >= 0.35:
+        health_age += 2.0
+        
+    # 3. 비만도 (BMI) 영향성
+    if bmi < 18.5:
+        health_age += 1.0
+    elif 18.5 <= bmi < 23.0:
+        health_age -= 1.5
+    elif 23.0 <= bmi < 25.0:
+        health_age += 1.0
+    else:  # bmi >= 25.0
+        health_age += 3.0
+        
+    # 4. 흡연 습관 (산화 스트레스 및 기대수명 감점)
+    if current_smoking == 1:
+        health_age += 4.0
+    else:
+        health_age -= 1.0
+        
+    # 5. 유산소 운동 여부 (세포 노화 지연 및 심폐 기능 가점)
+    if aerobic_activity == 1:
+        health_age -= 1.5
+    else:
+        health_age += 2.0
+        
+    # 실제 나이보다 최대 5살까지만 젊어지게 보정 (하한 장벽)
+    min_age = age - 5
+    if health_age < min_age:
+        health_age = min_age
+        
+    return int(round(health_age))
+
 def predict(data: dict) -> dict:
     _load_models()
 
     # BMI 자동 계산
-    bmi = data.get("bmi") or _calc_bmi(data["weight_kg"], data["height_cm"])
+    bmi = calculate_bmi(data["height_cm"], data["weight_kg"])
+    obesity_status = 1 if bmi >= 25 else 0
 
     disease_feature_map = _feature_columns.get("feature_columns_by_disease", {})
 
@@ -81,24 +152,32 @@ def predict(data: dict) -> dict:
         if data.get("fasting_glucose", 0) >= 126: diab_prob = 75.0
         elif data.get("fasting_glucose", 0) >= 100: diab_prob = 40.0
 
-    obesity_prob = _calc_obesity(bmi)
-    metabolic_prob = _calc_metabolic(data)
+    current_smoking = data.get("current_smoking", 0)
+    aerobic_activity = data.get("aerobic_activity", 1)
 
-    health_score = max(0, round(100 - (
-        hyper_prob * 0.3 + diab_prob * 0.3 +
-        obesity_prob * 0.2 + metabolic_prob * 0.2
-    ) / 2))
+    vitality_score = calculate_vitality_score(
+        hypertension_prob=hyper_prob,
+        diabetes_prob=diab_prob,
+        bmi=bmi,
+        current_smoking=current_smoking,
+        aerobic_activity=aerobic_activity
+    )
 
-    base_age = data.get("age", 30)
-    health_age = base_age + round((hyper_prob + diab_prob) / 20 - 3)
-    health_age = max(base_age - 5, health_age)
+    health_age = calculate_health_age(
+        age=data.get("age", 30),
+        hypertension_prob=hyper_prob / 100.0,
+        diabetes_prob=diab_prob / 100.0,
+        bmi=bmi,
+        current_smoking=current_smoking,
+        aerobic_activity=aerobic_activity
+    )
 
     return {
-        "diabetes": round(diab_prob, 1),
-        "hypertension": round(hyper_prob, 1),
-        "metabolic": metabolic_prob,
-        "obesity": obesity_prob,
         "bmi": bmi,
-        "healthScore": health_score,
+        "obesity_status": obesity_status,
+        "hypertension_prob": round(hyper_prob / 100.0, 4),
+        "diabetes_prob": round(diab_prob / 100.0, 4),
+        "vitality_score": vitality_score,
+        "health_age": health_age,
         "healthAge": health_age
     }
