@@ -7,7 +7,7 @@ load_dotenv(os.path.join(BASE_DIR, ".env"))
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
-from routers import analyze, plan, benefits, coach
+from routers import analyze, plan, benefits, coach, kdca, quest
 import os
 
 app = FastAPI(title="Echo Health API", version="1.0.0")
@@ -30,6 +30,8 @@ app.include_router(analyze.router)
 app.include_router(plan.router)
 app.include_router(benefits.router)
 app.include_router(coach.router)
+app.include_router(kdca.router)
+app.include_router(quest.router)
 
 @app.get("/")
 def read_root():

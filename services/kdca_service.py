@@ -1,81 +1,73 @@
-"""
-kdca_service.py
-- 질병관리청 국가건강정보포털 API를 실시간으로 호출하여 콘텐츠를 가져온다.
-- API 호출 실패 시 config/kdca_contents.json의 정적 데이터로 fallback 처리.
-- 사용자의 위험요인에 맞는 카테고리를 선택하여 관련 콘텐츠를 반환한다.
-"""
 import os
 import json
 import httpx
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+KDCA_API_BASE = "https://health.kdca.go.kr/healthinfo/biz/pblcnth/..."  # 실제 엔드포인트 미확정이므로 대기
 
-# KDCA 국가건강정보포털 공개 API
-# 실제 엔드포인트 및 인증 키는 추후 확인 후 .env에 추가 필요
-# 현재는 실시간 호출 시도 → 실패 시 정적 fallback
-KDCA_API_BASE = os.environ.get(
-    "KDCA_API_BASE",
-    "https://health.kdca.go.kr/healthinfo/biz/pblcnth/getPblcnthList.do"
-)
-
-# 위험요인 → KDCA 카테고리 매핑 테이블
-# (플랜 v3 표 기준)
-RISK_CATEGORY_MAP = {
-    "hypertension": "고혈압 예방",
-    "diabetes": "당뇨 예방",
-    "obesity": "비만 관리",
-    "smoking": "금연",
-    "activity": "신체활동",
-}
-
-def _load_static_fallback() -> dict:
-    """정적 fallback: config/kdca_contents.json"""
+def _load_fallback_kdca():
     path = os.path.join(BASE_DIR, "config/kdca_contents.json")
-    with open(path, "r", encoding="utf-8") as f:
-        return json.load(f)
+    if os.path.exists(path):
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return {}
 
-async def fetch_kdca_content(categories: list) -> dict:
+async def fetch_kdca_content(categories: list[str]) -> dict:
     """
-    categories: ["hypertension", "diabetes", "smoking", ...]
-    각 카테고리별 KDCA API 호출 후 요약 콘텐츠 반환.
-    API 호출 실패 시 정적 fallback 사용.
+    categories: ["hypertension", "diabetes", "obesity", "smoking", "activity"]
+    각 카테고리별 KDCA API 호출을 시도하며, 엔드포인트 미작동 시 static kdca_contents.json에서 복원합니다.
     """
-    static = _load_static_fallback()
+    fallback_data = _load_fallback_kdca()
     results = {}
-
-    async with httpx.AsyncClient(timeout=5.0) as client:
-        for category in categories:
-            try:
-                resp = await client.get(
-                    KDCA_API_BASE,
-                    params={"category": RISK_CATEGORY_MAP.get(category, category)}
-                )
-                resp.raise_for_status()
-                data = resp.json()
-                # KDCA API 응답 파싱 (포맷 확인 후 조정 필요)
-                results[category] = data.get("content") or data.get("items", [{}])[0].get("cn", static.get(category, ""))
-            except Exception as e:
-                print(f"[KDCA API Fallback] {category}: {e}")
-                results[category] = static.get(category, "")
-
+    
+    for category in categories:
+        try:
+            # 실제 KDCA API 엔드포인트가 제대로 설정되었을 때 작동하도록 가드
+            if KDCA_API_BASE and not KDCA_API_BASE.endswith("..."):
+                async with httpx.AsyncClient() as client:
+                    response = await client.get(KDCA_API_BASE, params={"category": category}, timeout=2.0)
+                    if response.status_code == 200:
+                        results[category] = response.json()
+                        continue
+            
+            # API 호출 불가능하거나 실패 시 로컬 정적 데이터 제공
+            results[category] = fallback_data.get(category, "건강을 위해 규칙적인 운동과 식단 관리를 권장합니다. (출처: 질병관리청)")
+        except Exception as e:
+            print(f"[KDCA Service Warning] API 호출 실패로 정적 데이터 활용: {e}")
+            results[category] = fallback_data.get(category, "건강을 위해 규칙적인 운동과 식단 관리를 권장합니다. (출처: 질병관리청)")
+            
     return results
 
-def select_categories(predict_result: dict, user_data: dict = None) -> list:
+def select_categories(predict_result: dict, user_data: dict = None) -> list[str]:
     """
-    predict_result의 위험요인 분석 결과를 기반으로 해당하는 카테고리 목록을 반환.
-    플랜 v3 표 기준.
+    사용자의 예측 결과 및 프로필 요인을 분석하여 관련 KDCA 카테고리를 선택합니다.
     """
     categories = []
-    if predict_result.get("hypertension_prob", 0) > 0.5:
+    
+    # 1. 고혈압
+    if predict_result.get("hypertension_prob", 0.0) > 0.5:
         categories.append("hypertension")
-    if predict_result.get("diabetes_prob", 0) > 0.5:
+        
+    # 2. 당뇨
+    if predict_result.get("diabetes_prob", 0.0) > 0.5:
         categories.append("diabetes")
+        
+    # 3. 비만
     if predict_result.get("obesity_status", 0) == 1:
         categories.append("obesity")
-    if (user_data or {}).get("current_smoking", predict_result.get("current_smoking", 0)) == 1:
+        
+    # 4. 흡연 및 운동 여부 (predict_result 혹은 user_data에서 확인)
+    current_smoking = predict_result.get("current_smoking")
+    if current_smoking is None and user_data:
+        current_smoking = user_data.get("current_smoking")
+        
+    aerobic_activity = predict_result.get("aerobic_activity")
+    if aerobic_activity is None and user_data:
+        aerobic_activity = user_data.get("aerobic_activity")
+        
+    if current_smoking == 1:
         categories.append("smoking")
-    if (user_data or {}).get("aerobic_activity", predict_result.get("aerobic_activity", 1)) == 0:
+    if aerobic_activity == 0:
         categories.append("activity")
-
-    # 매핑 결과가 없는 경우 기본값: activity
+        
     return categories if categories else ["activity"]

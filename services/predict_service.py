@@ -30,15 +30,13 @@ def calculate_bmi(height_cm: float, weight_kg: float) -> float:
 
 def calculate_vitality_score(hypertension_prob: float, diabetes_prob: float, bmi: float,
                               current_smoking: int, aerobic_activity: int) -> int:
-    # 소수 → 퍼센트 변환
-    if hypertension_prob <= 1.0:
-        hypertension_prob *= 100
-    if diabetes_prob <= 1.0:
-        diabetes_prob *= 100
+    # 소수(0.0~1.0) → 퍼센트(0.0~100.0) 변환
+    hp = hypertension_prob * 100 if hypertension_prob <= 1.0 else hypertension_prob
+    dp = diabetes_prob * 100 if diabetes_prob <= 1.0 else diabetes_prob
 
     score = 100.0
-    score -= hypertension_prob * 0.2
-    score -= diabetes_prob * 0.2
+    score -= hp * 0.2
+    score -= dp * 0.2
     if bmi >= 25:
         score -= 15
     if current_smoking == 1:
@@ -47,12 +45,6 @@ def calculate_vitality_score(hypertension_prob: float, diabetes_prob: float, bmi
         score -= 15
 
     return max(0, min(100, round(score)))
-
-def _calc_obesity(bmi: float) -> int:
-    if bmi >= 30: return 75
-    if bmi >= 25: return 50
-    if bmi >= 23: return 25
-    return 10
 
 def _calc_metabolic(data: dict) -> int:
     score = 0
@@ -124,49 +116,50 @@ def predict(data: dict) -> dict:
 
     disease_feature_map = _feature_columns.get("feature_columns_by_disease", {})
 
-    # 고혈압
+    # 고혈압 (소수점 형태 확률 계산)
     if _hypertension_model is not None:
         hyper_cols = disease_feature_map.get("고혈압", [])
         hyper_input = {col: data.get(col, 0) for col in hyper_cols}
         hyper_input["bmi"] = bmi
         hyper_df = pd.DataFrame([hyper_input], columns=hyper_cols)
-        hyper_prob = float(
+        hypertension_prob = float(
             _hypertension_model.predict_proba(hyper_df)[0][1]
-        ) * 100
+        )
     else:
-        hyper_prob = 20.0
-        if data.get("systolic_bp", 0) >= 140: hyper_prob = 70.0
-        elif data.get("systolic_bp", 0) >= 130: hyper_prob = 45.0
+        hypertension_prob = 0.20
+        if data.get("systolic_bp", 0) >= 140: hypertension_prob = 0.70
+        elif data.get("systolic_bp", 0) >= 130: hypertension_prob = 0.45
 
-    # 당뇨
+    # 당뇨 (소수점 형태 확률 계산)
     if _diabetes_model is not None:
         diab_cols = disease_feature_map.get("당뇨", [])
         diab_input = {col: data.get(col, 0) for col in diab_cols}
         diab_input["bmi"] = bmi
         diab_df = pd.DataFrame([diab_input], columns=diab_cols)
-        diab_prob = float(
+        diabetes_prob = float(
             _diabetes_model.predict_proba(diab_df)[0][1]
-        ) * 100
+        )
     else:
-        diab_prob = 15.0
-        if data.get("fasting_glucose", 0) >= 126: diab_prob = 75.0
-        elif data.get("fasting_glucose", 0) >= 100: diab_prob = 40.0
+        diabetes_prob = 0.15
+        if data.get("fasting_glucose", 0) >= 126: diabetes_prob = 0.75
+        elif data.get("fasting_glucose", 0) >= 100: diabetes_prob = 0.40
 
     current_smoking = data.get("current_smoking", 0)
     aerobic_activity = data.get("aerobic_activity", 1)
 
     vitality_score = calculate_vitality_score(
-        hypertension_prob=hyper_prob,
-        diabetes_prob=diab_prob,
+        hypertension_prob=hypertension_prob,
+        diabetes_prob=diabetes_prob,
         bmi=bmi,
         current_smoking=current_smoking,
         aerobic_activity=aerobic_activity
     )
+    metabolic = _calc_metabolic(data)
 
     health_age = calculate_health_age(
         age=data.get("age", 30),
-        hypertension_prob=hyper_prob / 100.0,
-        diabetes_prob=diab_prob / 100.0,
+        hypertension_prob=hypertension_prob,
+        diabetes_prob=diabetes_prob,
         bmi=bmi,
         current_smoking=current_smoking,
         aerobic_activity=aerobic_activity
@@ -175,8 +168,9 @@ def predict(data: dict) -> dict:
     return {
         "bmi": bmi,
         "obesity_status": obesity_status,
-        "hypertension_prob": round(hyper_prob / 100.0, 4),
-        "diabetes_prob": round(diab_prob / 100.0, 4),
+        "hypertension_prob": round(hypertension_prob, 4),
+        "diabetes_prob": round(diabetes_prob, 4),
+        "metabolic": metabolic,
         "vitality_score": vitality_score,
         "health_age": health_age,
         "healthAge": health_age

@@ -3,8 +3,12 @@ from google.genai import types
 import os
 import json
 
-# Initialize the Gemini Client. It will load GEMINI_API_KEY from environment variables automatically.
-client = genai.Client()
+# Initialize the Gemini Client with explicit API key.
+# os.environ에서 직접 읽어 배포 환경(Cloud Run 등)에서도 안전하게 동작.
+_api_key = os.environ.get("GEMINI_API_KEY")
+if not _api_key:
+    raise RuntimeError("GEMINI_API_KEY 환경변수가 설정되지 않았습니다. .env 파일 또는 배포 환경변수를 확인하세요.")
+client = genai.Client(api_key=_api_key)
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -23,7 +27,7 @@ def _load_coach_prompt(user_context) -> str:
     path = os.path.join(BASE_DIR, "config/coach_prompt.txt")
     with open(path, "r", encoding="utf-8") as f:
         content = f.read()
-    return content.replace("{user_context}", user_context)
+    return content.replace("{user_context}", str(user_context) if not isinstance(user_context, str) else user_context)
 
 def _load_kdca_contents() -> dict:
     path = os.path.join(BASE_DIR, "config/kdca_contents.json")
@@ -68,7 +72,7 @@ def generate_plan(diabetes: float, hypertension: float,
         )
 
         response = client.models.generate_content(
-            model='gemini-2.5-flash',
+            model='gemini-3.1-flash-lite',
             contents=prompt,
         )
         text = response.text.strip()
@@ -90,7 +94,7 @@ def generate_plan(diabetes: float, hypertension: float,
                 {"week": 4, "title": "습관 정착", "color": "#D97706",
                  "items": ["운동 루틴 점검", "한 달 변화 기록", "재분석으로 확인", "다음 달 목표 설정"]}
             ],
-            "weeklyGoals": {"steps": 8000, "exerciseMinutes": 30}
+            "weeklyGoals": {"steps": 1000, "exerciseMinutes": 30}
         }
 
 def generate_coach_reply(messages: list, user_context: str) -> dict:
@@ -108,7 +112,7 @@ def generate_coach_reply(messages: list, user_context: str) -> dict:
             )
 
         chat = client.chats.create(
-            model="gemini-2.5-flash",
+            model="gemini-3.1-flash-lite",
             history=history,
             config=types.GenerateContentConfig(
                 system_instruction=system_prompt,
