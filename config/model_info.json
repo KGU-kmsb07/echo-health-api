@@ -1,80 +1,52 @@
 {
   "project": "Echo Health",
-  "model_selection": "5-Fold Stratified Cross Validation",
+  "model_version": "E.H.ML v.2.0.3",
+  "reference_year": "2024",
+  "model_policy": "simple-only",
   "disease_model_strategy": {
-    "고혈압": "ML model with leakage variables removed",
-    "당뇨": "ML model with leakage variables removed",
-    "비만": "Rule-based BMI classification"
+    "고혈압": "Simple feature Logistic Regression",
+    "당뇨": "Simple feature Logistic Regression",
+    "심장질환": "Simple feature Logistic Regression",
+    "암": "Simple feature Logistic Regression",
+    "뇌졸중": "Simple rule fallback",
+    "체중관리군": "Rule-based BMI classification"
   },
   "saved_models": {
     "고혈압": {
       "model_name": "Logistic Regression",
-      "model_file": "hypertension_model.pkl",
-      "target": "hypertension_label_bin",
-      "feature_columns": [
-        "age",
-        "sex",
-        "height_cm",
-        "weight_kg",
-        "waist_cm",
-        "bmi",
-        "fasting_glucose",
-        "hba1c",
-        "total_cholesterol",
-        "hdl_cholesterol",
-        "triglyceride",
-        "ldl_direct",
-        "current_smoking",
-        "aerobic_activity"
-      ],
-      "removed_leakage_columns": [
-        "systolic_bp",
-        "diastolic_bp"
-      ],
-      "cv_f1_mean": 0.7345,
-      "cv_f1_std": 0.0111,
-      "cv_accuracy_mean": 0.7347,
-      "train_size": 14262
+      "model_file": "simple/hypertension_logistic_regression.pkl"
     },
     "당뇨": {
-      "model_name": "Random Forest",
-      "model_file": "diabetes_model.pkl",
-      "target": "diabetes_label_bin",
-      "feature_columns": [
-        "age",
-        "sex",
-        "height_cm",
-        "weight_kg",
-        "waist_cm",
-        "bmi",
-        "systolic_bp",
-        "diastolic_bp",
-        "total_cholesterol",
-        "hdl_cholesterol",
-        "triglyceride",
-        "ldl_direct",
-        "current_smoking",
-        "aerobic_activity"
-      ],
-      "removed_leakage_columns": [
-        "fasting_glucose",
-        "hba1c"
-      ],
-      "cv_f1_mean": 0.7262,
-      "cv_f1_std": 0.0096,
-      "cv_accuracy_mean": 0.7297,
-      "train_size": 14262
+      "model_name": "Logistic Regression",
+      "model_file": "simple/diabetes_logistic_regression.pkl"
+    },
+    "심장질환": {
+      "model_name": "Logistic Regression",
+      "model_file": "simple/heart_disease_logistic_regression.pkl"
+    },
+    "암": {
+      "model_name": "Logistic Regression",
+      "model_file": "simple/cancer_logistic_regression.pkl"
     }
   },
-  "obesity_rule": {
-    "formula": "BMI = weight_kg / (height_m ** 2)",
+  "simple_features": [
+    "age",
+    "sex",
+    "height_cm",
+    "weight_kg",
+    "waist_cm",
+    "bmi",
+    "current_smoking",
+    "aerobic_activity"
+  ],
+  "bmi_rule": {
+    "formula": "BMI = weight_kg / ((height_cm / 100) ** 2)",
+    "weight_management_threshold": 23.0,
     "categories": {
       "BMI < 18.5": "저체중",
       "18.5 <= BMI < 23": "정상",
       "23 <= BMI < 25": "과체중",
-      "25 <= BMI < 30": "비만",
-      "30 <= BMI < 35": "고도비만",
-      "BMI >= 35": "초고도비만"
+      "BMI >= 25": "비만"
     }
   }
 }

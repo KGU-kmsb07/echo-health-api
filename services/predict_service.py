@@ -14,10 +14,10 @@ def _load_models():
     try:
         if _hypertension_model is None:
             _hypertension_model = joblib.load(
-                os.path.join(BASE_DIR, "models/hypertension_model.pkl"))
+                os.path.join(BASE_DIR, "models/simple/hypertension_logistic_regression.pkl"))
         if _diabetes_model is None:
             _diabetes_model = joblib.load(
-                os.path.join(BASE_DIR, "models/diabetes_model.pkl"))
+                os.path.join(BASE_DIR, "models/simple/diabetes_logistic_regression.pkl"))
     except Exception as e:
         print(f"모델 로드 실패, rule-based 사용: {e}")
     if _feature_columns is None:
