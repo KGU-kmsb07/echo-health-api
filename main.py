@@ -5,7 +5,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 load_dotenv(os.path.join(BASE_DIR, ".env"))
 
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 from routers import analyze, plan, benefits, coach, kdca, quest
 import os
@@ -32,6 +32,12 @@ app.include_router(benefits.router)
 app.include_router(coach.router)
 app.include_router(kdca.router)
 app.include_router(quest.router)
+
+@app.get("/privacy", response_class=HTMLResponse)
+@app.get("/privacy/", response_class=HTMLResponse)
+@app.get("/privacy/consent/document", response_class=HTMLResponse)
+def privacy_document():
+    return analyze.privacy_consent_document()
 
 @app.get("/")
 def read_root():
