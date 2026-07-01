@@ -9,7 +9,7 @@ def coach(data: dict):
     user_context = data.get("userContext", "")
     if not messages:
         return {
-            "reply": "안녕하세요! 건강에 대해 궁금한 점을 물어보세요.",
-            "source": "출처: 질병관리청 국민건강영양조사"
+            "reply": "안녕하세요. 건강정보나 건강 관련 복지정보에 대해 물어보세요.",
+            "source": "응답 범위: 건강정보 및 건강 복지정보"
         }
     return generate_coach_reply(messages, user_context)
