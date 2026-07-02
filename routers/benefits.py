@@ -1,4 +1,4 @@
-import json
+﻿import json
 import os
 import re
 import time
@@ -503,30 +503,7 @@ def _fetch_health_benefits() -> list[dict[str, Any]]:
 
 
 def _local_benefits() -> list[dict[str, Any]]:
-    path = os.path.join(BASE_DIR, "config", "benefits.json")
-    try:
-        with open(path, "r", encoding="utf-8") as file:
-            data = json.load(file)
-        return [
-            {
-                "id": str(item.get("id", "")),
-                "title": _clean(item.get("title"), "공공서비스"),
-                "provider": _clean(item.get("region"), "정부24"),
-                "summary": _clean(item.get("desc")),
-                "target": "",
-                "applicationMethod": "",
-                "deadline": "상시 또는 기관 문의",
-                "sourceUrl": "",
-                "tags": item.get("tags", []),
-                "region": _clean(item.get("region")),
-                "updatedAt": "",
-                "raw": item,
-            }
-            for item in data
-        ]
-    except Exception:
-        return []
-
+    return []
 
 def _shape_response(items: list[dict[str, Any]], status: str = "success", source: str = "gov24", message: str = ""):
     return {
@@ -572,8 +549,7 @@ def _filter_benefits(
         items = _fetch_health_benefits()
         status, source, message = "success", "gov24", ""
     except Exception as error:
-        items = [benefit for benefit in _local_benefits() if _is_health_related(benefit)]
-        status, source, message = "fallback", "local", str(error)
+        return _shape_response([], "error", "gov24", str(error))
 
     profile = BenefitProfile(
         age=age,

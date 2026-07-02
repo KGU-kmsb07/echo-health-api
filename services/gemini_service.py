@@ -1,8 +1,10 @@
-from google import genai
+﻿from google import genai
 from google.genai import types
 import os
 import json
 import re
+import html
+import xml.etree.ElementTree as ET
 from typing import Any
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
@@ -19,9 +21,11 @@ client = genai.Client(api_key=_api_key)
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 HEALTH_WORDS = [
+    "암", "간암", "위암", "폐암", "대장암", "유방암", "빈혈", "감기", "천식", "간염", "검진", "예방",
     "건강", "질병", "증상", "운동", "식단", "영양", "비만", "체중", "혈압", "고혈압",
     "혈당", "당뇨", "흡연", "금연", "음주", "수면", "스트레스", "검진", "예방",
-    "콜레스테롤", "허리둘레", "bmi", "BMI", "심혈관", "정신건강", "우울", "불안"
+    "콜레스테롤", "허리둘레", "bmi", "BMI", "심혈관", "정신건강", "우울", "불안",
+    "질환", "질병", "병", "예방법", "예방정보", "치료", "원인"
 ]
 WELFARE_WORDS = [
     "복지", "혜택", "지원", "지원금", "서비스", "보조", "신청", "대상", "자격",
@@ -40,7 +44,10 @@ def _latest_user_text(messages: list[dict[str, Any]]) -> str:
 
 
 def _is_health_question(text: str) -> bool:
-    return any(word in text for word in HEALTH_WORDS)
+    stripped = text.strip()
+    if any(word in stripped for word in HEALTH_WORDS):
+        return True
+    return bool(re.search(r"[가-힣A-Za-z0-9]{2,}(이|가)?\s*(뭐야|무엇|원인|증상|예방|관리)", stripped))
 
 
 def _is_welfare_question(text: str) -> bool:
@@ -106,6 +113,8 @@ def _select_health_categories(question: str, user_context: Any) -> list[str]:
         "obesity": ["비만", "체중", "BMI", "bmi"],
         "smoking": ["흡연", "금연"],
         "activity": ["운동", "신체활동", "걷기"],
+        "cancer": ["암", "간암", "위암", "폐암", "대장암", "유방암", "검진"],
+        "anemia": ["빈혈"],
     }
     for category, words in keyword_map.items():
         if any(word in question for word in words):
@@ -119,12 +128,110 @@ def _select_health_categories(question: str, user_context: Any) -> list[str]:
         categories.append("obesity")
     if "smoking" in risks:
         categories.append("smoking")
-    return list(dict.fromkeys(categories or ["activity"]))
+    return list(dict.fromkeys(categories or ["general"]))
+
+
+def _health_intent(question: str) -> str:
+    text = question or ""
+    if any(word in text for word in ["예방", "예방법", "막으", "낮추", "줄이", "관리", "생활습관"]):
+        return "prevention"
+    if any(word in text for word in ["증상", "아플", "통증", "징후"]):
+        return "symptom"
+    if any(word in text for word in ["치료", "수술", "약", "검사", "진단"]):
+        return "care"
+    if any(word in text for word in ["뭐야", "무엇", "정의", "개요", "뜻"]):
+        return "definition"
+    return "definition"
+
+
+def _extract_health_keyword(question: str, category: str) -> str:
+    text = re.sub(r"\s+", " ", question or "").strip()
+    known_terms = [
+        "간암", "위암", "폐암", "대장암", "유방암", "빈혈", "고혈압", "당뇨", "비만",
+        "직장탈출증", "천식", "감기", "간염", "심혈관질환", "우울증", "불안"
+    ]
+    for term in known_terms:
+        if term in text:
+            return term
+    text = re.sub(r"(에\s*대해|에\s*관해|관련|예방정보|예방 정보|예방법|예방|정보|정의|개요|뜻)", " ", text)
+    text = re.sub(r"(이|가|은|는|을|를)?\s*(뭐야|무엇인가요|무엇|알려줘|찾아줘|설명해줘|낮추려면|줄이려면|관리하려면)", " ", text)
+    text = re.sub(r"[^가-힣A-Za-z0-9\s]", " ", text)
+    words = [word for word in text.split() if len(word) >= 2]
+    if words:
+        return words[0]
+    if category == "anemia":
+        return "빈혈"
+    return "" if category == "general" else category
+
+
+def _health_search_query(question: str, category: str) -> str:
+    return _extract_health_keyword(question, category) or category
+
+
+def _api_category(category: str) -> str:
+    allowed = {"hypertension", "diabetes", "obesity", "smoking", "activity", "cancer"}
+    return category if category in allowed else ""
+
+
+def _xml_text(element: ET.Element, path: str) -> str:
+    node = element.find(path)
+    return html.unescape("".join(node.itertext()).strip()) if node is not None else ""
+
+
+def _extract_kdca_sections(payload: str, intent: str) -> str:
+    text = (payload or "").strip()
+    if not text:
+        return ""
+
+    if text.startswith("{") or text.startswith("["):
+        try:
+            return json.dumps(json.loads(text), ensure_ascii=False)[:1600]
+        except Exception:
+            return text[:1600]
+
+    try:
+        root = ET.fromstring(f"<root>{text}</root>")
+    except Exception:
+        return re.sub(r"\s+", " ", text)[:1600]
+
+    title = _xml_text(root, ".//CNTNTSSJ")
+    sections = []
+    for item in root.findall(".//cntntsCl"):
+        name = _xml_text(item, "CNTNTS_CL_NM")
+        content = _xml_text(item, "CNTNTS_CL_CN")
+        if not content or content.startswith("http"):
+            continue
+        sections.append({"name": name, "content": re.sub(r"\s+", " ", content)})
+
+    if not sections:
+        return title
+
+    preferences = {
+        "definition": ["개요-정의", "정의", "개요"],
+        "prevention": ["예방", "위험요인", "생활", "관리", "자가관리"],
+        "symptom": ["증상", "진단"],
+        "care": ["치료", "검사", "진단", "수술"],
+    }.get(intent, ["개요-정의", "정의", "개요"])
+
+    selected = []
+    for preferred in preferences:
+        for section in sections:
+            if preferred in section["name"] and section not in selected:
+                selected.append(section)
+        if selected:
+            break
+
+    if not selected:
+        selected = sections[:2]
+
+    lines = [f"질환명: {title}"] if title else []
+    lines.extend([f"{section['name']}: {section['content']}" for section in selected[:3]])
+    return "\n".join(lines)[:1800]
 
 
 def _fetch_kdca_health_context(question: str, user_context: Any) -> tuple[str, str]:
     categories = _select_health_categories(question, user_context)
-    fallback = _load_health_fallback()
+    intent = _health_intent(question)
     kdca_value = os.environ.get("KDCA", "").strip()
     kdca_base_url = os.environ.get("KDCA_API_BASE", "").strip()
     api_key = os.environ.get("KDCA_API_KEY", "").strip()
@@ -140,9 +247,13 @@ def _fetch_kdca_health_context(question: str, user_context: Any) -> tuple[str, s
         text = ""
         if kdca_base_url:
             try:
+                query = _health_search_query(question, category)
                 params = {
-                    "query": question,
-                    "category": category,
+                    "query": query,
+                    "q": query,
+                    "keyword": query,
+                    "searchWrd": query,
+                    "category": _api_category(category),
                     "serviceKey": api_key,
                 }
                 url = f"{kdca_base_url}?{urlencode({k: v for k, v in params.items() if v})}"
@@ -151,14 +262,15 @@ def _fetch_kdca_health_context(question: str, user_context: Any) -> tuple[str, s
                     payload = response.read().decode("utf-8")
                 try:
                     data = json.loads(payload)
-                    text = json.dumps(data, ensure_ascii=False)[:1200]
+                    text = json.dumps(data, ensure_ascii=False)[:1600]
                 except Exception:
-                    text = payload[:1200]
+                    text = _extract_kdca_sections(payload, intent)
             except Exception as error:
-                print(f"[KDCA RAG Warning] {category} API fallback: {error}")
-        if not text:
-            text = str(fallback.get(category, "건강을 위해 규칙적인 운동과 식단 관리를 권장합니다. (출처: 질병관리청)"))
-        results.append(f"- {category}: {text}")
+                print(f"[KDCA RAG Warning] {category} API request failed: {error}")
+        if text:
+            results.append(f"- 검색어: {query} / 의도: {intent}\n{text}")
+        else:
+            results.append(f"- {category}: 국가건강정보포털 API 응답을 받지 못했습니다.")
     return "\n".join(results), source
 
 
@@ -193,7 +305,7 @@ def _fetch_welfare_context(question: str, user_context: Any) -> tuple[str, str]:
         )
         items = response.get("items", [])[:5]
     if not items:
-        return "현재 조건에 맞는 건강 복지정보를 찾지 못했습니다.", "Echo Health 복지정보"
+        return "현재 조건에 맞는 건강 복지정보를 찾지 못했습니다.", "정부24 API"
     lines = []
     for index, item in enumerate(items, start=1):
         lines.append(
@@ -201,7 +313,7 @@ def _fetch_welfare_context(question: str, user_context: Any) -> tuple[str, str]:
             f"요약: {item.get('summary', '')} | 대상: {item.get('target', '') or '기관 문의'} | "
             f"신청: {item.get('applicationMethod', '') or '기관 문의'}"
         )
-    return "\n".join(lines), "Echo Health 복지정보"
+    return "\n".join(lines), "정부24 API"
 
 
 def _build_coach_system_prompt(user_context: Any, health_context: str, welfare_context: str) -> str:
@@ -210,6 +322,7 @@ def _build_coach_system_prompt(user_context: Any, health_context: str, welfare_c
 답변 가능 범위는 건강정보와 건강 관련 복지정보뿐이다.
 범위 밖 질문에는 답변하지 말고, 건강정보/건강 복지정보 질문만 가능하다고 짧게 안내한다.
 건강정보는 반드시 [KDCA 건강정보] 안의 내용과 사용자 건강정보를 근거로 답한다.
+질문이 "무엇/뭐야/정의"이면 개요-정의 내용을 우선 설명하고, "예방/낮추려면/관리"이면 예방, 위험요인, 생활습관 내용을 우선 설명한다.
 복지정보는 반드시 [건강 복지정보] 안의 항목만 근거로 소개한다.
 자료에 없는 세부 자격, 금액, 신청기한은 추측하지 말고 기관 확인이 필요하다고 말한다.
 진단, 처방, 치료 지시는 하지 말고 예방과 생활습관 중심으로 3-5문장 안에 답한다.
@@ -295,20 +408,8 @@ def generate_plan(diabetes: float, hypertension: float,
                 text = text[4:]
         return json.loads(text.strip())
     except Exception as e:
-        print(f"Gemini plan 실패: {e}")
-        return {
-            "plan": [
-                {"week": 1, "title": "건강 기초 다지기", "color": "#2563EB",
-                 "items": ["매일 30분 걷기", "물 하루 8잔", "취침 전 스트레칭", "식사 규칙적으로"]},
-                {"week": 2, "title": "생활습관 강화", "color": "#7C3AED",
-                 "items": ["유산소 운동 주 3회", "나트륨 줄이기", "수면 7시간 확보", "계단 이용"]},
-                {"week": 3, "title": "집중 관리", "color": "#059669",
-                 "items": ["근력 운동 추가", "채소 매 끼니 포함", "음주 줄이기", "스트레스 관리"]},
-                {"week": 4, "title": "습관 정착", "color": "#D97706",
-                 "items": ["운동 루틴 점검", "한 달 변화 기록", "재분석으로 확인", "다음 달 목표 설정"]}
-            ],
-            "weeklyGoals": {"steps": 1000, "exerciseMinutes": 30}
-        }
+        print(f"Gemini plan failed: {e}")
+        return {"status": "error", "message": str(e), "plan": [], "weeklyGoals": None}
 
 def generate_coach_reply(messages: list, user_context: Any) -> dict:
     try:

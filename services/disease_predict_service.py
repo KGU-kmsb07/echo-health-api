@@ -134,6 +134,8 @@ def _prepare_input(raw):
 def _detect_input_mode(raw):
     if raw.get("input_mode") == "checkup":
         return "checkup"
+    if raw.get("input_mode") == "simple":
+        return "simple"
     checkup_keys = set(CHECKUP_FEATURES) - set(SIMPLE_FEATURES)
     return "checkup" if any(raw.get(key) not in (None, "") for key in checkup_keys) else "simple"
 
